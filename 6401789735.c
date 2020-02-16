@@ -46,7 +46,7 @@ char* dump_terms(Term terms[], int num, char* output)
         Term diff = diff_term(terms[i]);
         if (diff.coef == 0)
             continue;
-        if (diff.coef > 0 && i > 0)
+        if (diff.coef > 0 && p != output)
             p += sprintf(p, "+");
         if (diff.power == 0)
             p += sprintf(p, "%d", diff.coef);
@@ -86,8 +86,13 @@ int simple_FSM(const char* input, Term* terms, int* num)
                 sign = 1;
                 p++;
             }
-            else if (*p >= '0' && *p <= '9' || *p == 'x')
-                sign = 1;
+			else if (*p >= '0' && *p <= '9' || *p == 'x')
+			{
+				if (cnt_term == 0)
+					sign = 1;
+				else
+					return 0;
+			}
             else
                 return 0;
             S = 1;
