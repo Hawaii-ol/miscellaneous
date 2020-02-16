@@ -1,3 +1,5 @@
+// 简单一元多项式求导
+
 #include <stdio.h>
 #define LEN 4096
 
