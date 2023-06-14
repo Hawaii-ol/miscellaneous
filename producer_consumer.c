@@ -5,16 +5,17 @@
 #ifdef _WIN32
 #include<Windows.h>
 #define sleep_milli(milli) Sleep(milli)
-#define producer_printf printf
-#define consumer_printf printf
-#define UNUSED
 #else
 #include<unistd.h>
 #define sleep_milli(milli) usleep((milli)*1000)
-#define producer_printf(fmt, ...) printf("\033[92m" fmt "\033[0m", ##__VA_ARGS__)
-#define consumer_printf(fmt, ...) printf("\033[94m" fmt "\033[0m", ##__VA_ARGS__)
-#define UNUSED __attribute__((unused))
 #endif
+#if defined __GNUC__ || defined __clang__
+#define UNUSED __attribute__((unused))
+#else
+#define UNUSED
+#endif
+#define producer_printf(fmt, ...) printf("\033[92m" fmt "\033[0m", ##__VA_ARGS__)
+#define consumer_printf(fmt, ...) printf("\033[91m" fmt "\033[0m", ##__VA_ARGS__)
 
 typedef struct {
 	int id;
@@ -83,9 +84,30 @@ void *apple_consumer(void *arg) {
 	return NULL;
 }
 
+#ifdef _WIN32
+int enable_vt() {
+	HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	if (hOut == INVALID_HANDLE_VALUE)
+		return 0;
+	
+	DWORD dwMode = 0;
+	if (!GetConsoleMode(hOut, &dwMode))
+		return 0;
+	
+	dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	if (!SetConsoleMode(hOut, dwMode))
+		return 0;
+
+	return 1;
+}
+#endif
+
 int main() {
 	int i, consumer_ids[2] = {1, 2};
 	pthread_t producer, consumers[2];
+#ifdef _WIN32
+	enable_vt();
+#endif
 	srand((unsigned)time(NULL));
 	CQ_CLEAR(cq);
 	pthread_mutex_init(&mtx, NULL);
