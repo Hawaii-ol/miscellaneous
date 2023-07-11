@@ -3,6 +3,9 @@
 #include <string.h>
 #ifdef _WIN32
 #include <Windows.h>
+#else
+#include <errno.h>
+#include <iconv.h>
 #endif
 
 #ifdef _MSC_VER
@@ -32,7 +35,7 @@
 #define ID3TAG_Year 'TYER'
 
 #define ENCODING_ISO_8859_1 0x00
-#define ENCODING_UTF16BE_BOM 0x01
+#define ENCODING_UTF16_BOM 0x01
 #define ENCODING_UTF16BE 0x02
 #define ENCODING_UTF8 0x03
 
@@ -218,11 +221,9 @@ int frame_text_size(char encoding, const char *text)
     case ENCODING_UTF8:
         size = (int)strlen(text) + 1;
         break;
-    case ENCODING_UTF16BE_BOM:
-        // 跳过2字节的BOM
-        text += 2;
+    case ENCODING_UTF16_BOM:
     case ENCODING_UTF16BE:
-        while (text[size] != '\0' && text[size + 1] != '\0')
+        while (text[size] != '\0' || text[size + 1] != '\0')
         {
             size += 2;
         }
@@ -243,7 +244,10 @@ char *frame_text_to_locale(char encoding, const char *text, int size)
     static char *ansi = NULL;
     wchar_t *utf16;
     int len, len16;
+    int little_endian = 0;
 
+    if (size == -1)
+        size = frame_text_size(encoding, text);
     switch (encoding)
     {
     case ENCODING_ISO_8859_1:
@@ -251,22 +255,25 @@ char *frame_text_to_locale(char encoding, const char *text, int size)
         utf16 = (wchar_t*)malloc(len16 * sizeof(wchar_t));
         MultiByteToWideChar(28591, 0, text, size, utf16, len16);
         break;
-    case ENCODING_UTF16BE_BOM:
+    case ENCODING_UTF16_BOM:
+        // FEFF = Big Endian, FFFE = Little Endian
+        if (text[0] == 0xFF && text[1] == 0xFE)
+            little_endian = 1;
         // 跳过2字节的BOM
         text += 2;
-        if (size != -1)
-            size -= 2;
+        size -= 2;
     case ENCODING_UTF16BE:
-        if (size == -1)
-            size = frame_text_size(ENCODING_UTF16BE, text);
         // 确保wchar_t内存对齐
         utf16 = (wchar_t*)malloc(size);
         memcpy(utf16, text, size);
         len16 = size / sizeof(wchar_t);
         // 转换字节序
-        for (wchar_t *cur = utf16; cur < utf16 + len16; cur++)
+        if (!little_endian)
         {
-            *cur = bswap16(*cur);
+            for (wchar_t *cur = utf16; cur < utf16 + len16; cur++)
+            {
+                *cur = bswap16(*cur);
+            }
         }
         break;
     case ENCODING_UTF8:
@@ -281,6 +288,65 @@ char *frame_text_to_locale(char encoding, const char *text, int size)
     ansi[len] = '\0';
     free(utf16);
     return ansi;
+#else
+    static char *utf8 = NULL;
+    size_t lenfrom = 0, lento = 0;
+    char *pfrom, *pto;
+    iconv_t icv;
+
+    if (size == -1)
+        size = frame_text_size(encoding, text);
+    switch (encoding)
+    {
+    case ENCODING_ISO_8859_1:
+        if ((icv = iconv_open("UTF-8", "ISO-8859-1")) == (iconv_t)-1)
+        {
+            perror("iconv");
+            return NULL;
+        }
+        // ascii字符不变，latin-1字符转utf-8变2字节
+        for (int i = 0; i < size; i++)
+        {
+            lento += ((text[i] & ~0x7F) ? 2 : 1);
+        }
+        break;
+    case ENCODING_UTF16_BOM:
+        if ((icv = iconv_open("UTF-8", "UTF-16")) == (iconv_t)-1)
+        {
+            perror("iconv");
+            return NULL;
+        }
+        // UTF-16转UTF-8字节数不会超过1.5倍
+        lento = (size - 2) / 2 * 3; // 跳过BOM头
+        break;
+    case ENCODING_UTF16BE:
+        if ((icv = iconv_open("UTF-8", "UTF-16BE")) == (iconv_t)-1)
+        {
+            perror("iconv");
+            return NULL;
+        }
+        lento = size / 2 * 3;
+        break;
+    case ENCODING_UTF8:
+        // 只会出现在v2.4
+        // 直接复制，字符串一定是\0结束
+        utf8 = (char*)realloc(utf8, size);
+        memcpy(utf8, text, size);
+        return utf8;
+    }
+
+    utf8 = (char*)realloc(utf8, lento + 1);
+    lenfrom = size;
+    pfrom = (char*)text;
+    pto = utf8;
+    if (iconv(icv, &pfrom, &lenfrom, &pto, &lento) == -1)
+    {
+        perror("iconv");
+        utf8[0] = '\0';
+    }
+    *pto = '\0';
+    iconv_close(icv);
+    return utf8;
 #endif
 }
 
