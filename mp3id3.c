@@ -1,3 +1,7 @@
+/* 参考文档
+ * https://mutagen-specs.readthedocs.io/en/latest/id3/id3v2.3.0.html
+ * https://mutagen-specs.readthedocs.io/en/latest/id3/id3v2.4.0-structure.html
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
