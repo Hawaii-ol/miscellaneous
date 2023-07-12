@@ -37,6 +37,7 @@
 #define ID3TAG_Artist 'TPE1'
 #define ID3TAG_Track 'TRCK'
 #define ID3TAG_Year 'TYER'
+#define ID3TAG_Padding 0x00
 
 #define ENCODING_ISO_8859_1 0x00
 #define ENCODING_UTF16_BOM 0x01
@@ -45,30 +46,6 @@
 
 #define MIME_JPEG "image/jpeg"
 #define MIME_PNG "image/png"
-
-static const char *pictypemap[] = {
-    "Other",
-    "32x32 pixels 'file icon' (PNG only)",
-    "Other file icon",
-    "Cover (front)",
-    "Cover (back)",
-    "Leaflet page",
-    "Media (e.g. label side of CD)",
-    "Lead artist/lead performer/soloist",
-    "Artist/performer",
-    "Conductor",
-    "Band/Orchestra",
-    "Composer",
-    "Lyricist/text writer",
-    "Recording Location",
-    "During recording",
-    "During performance",
-    "Movie/video screen capture",
-    "A bright coloured fish",
-    "Illustration",
-    "Band/artist logotype",
-    "Publisher/Studio logotype",
-};
 
 struct id3_header
 {
@@ -119,6 +96,37 @@ struct id3_fflags
     unsigned unsyrchronised : 1;
     unsigned data_length_indicator : 1;
 };
+
+/* 返回图片类型字符串 */
+const char *pictype_str(char pictype)
+{
+    static const char *pictypemap[] = {
+        "Other",
+        "32x32 pixels 'file icon' (PNG only)",
+        "Other file icon",
+        "Cover (front)",
+        "Cover (back)",
+        "Leaflet page",
+        "Media (e.g. label side of CD)",
+        "Lead artist/lead performer/soloist",
+        "Artist/performer",
+        "Conductor",
+        "Band/Orchestra",
+        "Composer",
+        "Lyricist/text writer",
+        "Recording Location",
+        "During recording",
+        "During performance",
+        "Movie/video screen capture",
+        "A bright coloured fish",
+        "Illustration",
+        "Band/artist logotype",
+        "Publisher/Studio logotype",
+    };
+    if (pictype >= 0 && pictype < sizeof(pictypemap))
+        return pictypemap[pictype];
+    return "未知";
+}
 
 /* 将32位的Big Endian int转换为本地int */
 static inline int id3_int32be_to_int(const char int32be[4])
@@ -261,7 +269,7 @@ char *frame_text_to_locale(char encoding, const char *text, int size)
         break;
     case ENCODING_UTF16_BOM:
         // FEFF = Big Endian, FFFE = Little Endian
-        if (text[0] == 0xFF && text[1] == 0xFE)
+        if (text[0] == (char)0xFF && text[1] == (char)0xFE)
             little_endian = 1;
         // 跳过2字节的BOM
         text += 2;
@@ -361,6 +369,29 @@ static inline void parse_text_frame(const char *prompt, const char *data, int si
     printf("%s: %s\n", prompt, frame_text_to_locale(data[0], data + 1, size - 1));
 }
 
+/* 解析COMM frame，输出注释信息 */
+void parse_comments(const char *data, int size)
+{
+    char encoding;
+    const char *desc;
+    int desc_size;
+    const char *text;
+    int offset;
+    static int count;
+
+    count++;
+    printf("注释%02d:\n", count);
+    encoding = data[0];
+    // 3字节ISO-639-2语言标识，暂未解析
+    printf("  语言: %.3s\n", data + 1);
+    desc_size = frame_text_size(encoding, data + 4);
+    desc = frame_text_to_locale(encoding, data + 4, desc_size);
+    printf("  简介: %s\n", desc);
+    offset = 4 + desc_size;
+    text = frame_text_to_locale(encoding, data + offset, size - offset);
+    printf("  正文: %s\n", text);
+}
+
 /* 解析APIC frame，输出图片信息并提取图片文件 */
 void parse_extract_apic(const char *data, int size)
 {
@@ -374,15 +405,15 @@ void parse_extract_apic(const char *data, int size)
     const char *ext;
     FILE *fp;
     int offset;
-    static int picnum;
+    static int count;
 
-    picnum++;
-    printf("图片%02d元数据\n", picnum);
+    count++;
+    printf("图片%02d:\n", count);
     encoding = data[0];
     offset = 1;
-    // MIME类型
-    mime_size = frame_text_size(encoding, data + 1);
-    mime_type = frame_text_to_locale(encoding, data + 1, mime_size);
+    // MIME类型，编码固定为ISO-8859-1
+    mime_size = frame_text_size(ENCODING_ISO_8859_1, data + 1);
+    mime_type = frame_text_to_locale(ENCODING_ISO_8859_1, data + 1, mime_size);
     printf("  MIME类型: %s\n", mime_type);
     if (strcmp(mime_type, MIME_JPEG) == 0)
         ext = "jpg";
@@ -393,10 +424,7 @@ void parse_extract_apic(const char *data, int size)
     offset += mime_size;
     // 图片类型
     pic_type = data[offset];
-    if (pic_type >= 0 && pic_type < sizeof(pictypemap))
-        printf("  图片类型: %s\n", pictypemap[pic_type]);
-    else
-        printf("  图片类型: 未知\n");
+    printf("  图片类型: %s\n", pictype_str(pic_type));
     offset++;
     // 图片描述
     desc_size = frame_text_size(encoding, data + offset);
@@ -407,7 +435,7 @@ void parse_extract_apic(const char *data, int size)
     printf("  图片大小: %d字节\n", size - offset);
     if (ext != NULL)
     {
-        sprintf(filename, "id3pic%02d.%s", picnum, ext);
+        sprintf(filename, "id3pic%02d.%s", count, ext);
         if ((fp = fopen(filename, "wb")) == NULL)
         {
             printf("  导出图片%s失败: %s\n", filename, strerror(errno));
@@ -421,7 +449,7 @@ void parse_extract_apic(const char *data, int size)
     }
     else
     {
-        printf("  无法导出图片%02d: 不支持的MIME格式\n", picnum);
+        printf("  无法导出图片%02d: 不支持的MIME格式\n", count);
     }
 }
 
@@ -505,7 +533,7 @@ int main(int argc, char *argv[])
         fflags = id3_frame_flags(header.ver, &frame);
         if (fflags.compressed || fflags.encrypted)
         {
-            printf("frame %4s被压缩或加密，跳过。\n", frame.type);
+            printf("frame %.4s被压缩或加密，跳过。\n", frame.type);
             fseek(fp, frame_size, SEEK_CUR);
             offset += sizeof(frame) + frame_size;
             continue;
@@ -528,7 +556,7 @@ int main(int argc, char *argv[])
             parse_text_frame("作曲", data, frame_size);
             break;
         case ID3TAG_Genre:
-            parse_text_frame("类型", data, frame_size);
+            parse_text_frame("流派", data, frame_size);
             break;
         case ID3TAG_Lyricist:
             parse_text_frame("作词", data, frame_size);
@@ -551,8 +579,15 @@ int main(int argc, char *argv[])
         case ID3TAG_Picture:
             parse_extract_apic(data, frame_size);
             break;
+        case ID3TAG_Comment:
+            parse_comments(data, frame_size);
+            break;
+        case ID3TAG_Padding:
+            // 似乎已到达最后一个frame，余下的字节都是padding
+            offset = tag_size;
+            continue;
         default:
-            // printf("尚未支持的frame: %4s，跳过。\n", frame.type);
+            // printf("--暂不支持的frame: %.4s，跳过。\n", frame.type);
             break;
         }
 
