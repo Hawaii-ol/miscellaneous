@@ -31,6 +31,8 @@ struct Lstudent
     struct Lstudent *next;
 };
 void load(struct Lstudent** head, const char* filename) {
+	*head = NULL; // 如果没读到任何数据需要返回空链表
+
     FILE* fp = fopen(filename, "r");
     if (fp == NULL) {
         printf("无法打开文件进行读取!\n");
@@ -44,67 +46,72 @@ void load(struct Lstudent** head, const char* filename) {
     struct Lstudent* prevStudent = NULL;
  
     while (1) {
- 
- 
-        // 读取学生信息
-        int readCount = fscanf(fp, "%d,%[^,],%d,%[^,],%f,%f\n",
-                             &tempStudent.xuehao, tempStudent.name, &tempStudent.Class, tempStudent.sex,
-                             &tempStudent.ZGPA, &tempStudent.KGPA);
-        if (readCount != 6) { // 没读取到完整的学生信息，可能是到了课程信息部分，或文件格式错误
-            break;
-        }
- 
-        // 创建新的学生节点
-        currentStudent = (struct Lstudent*) malloc(sizeof(struct Lstudent));
-        if (currentStudent == NULL) {
-            printf("内存分配失败!\n");
-            break;
-        }
-        currentStudent->data = tempStudent;
-        currentStudent->chead = NULL;
-        currentStudent->next = NULL;
- 
-        // 如果这不是第一个学生节点，将其链接到链表末尾
-        if (prevStudent != NULL) {
-            prevStudent->next = currentStudent;
-        } else { // 第一个学生节点，更新链表头
-            *head = currentStudent;
-        }
-        prevStudent = currentStudent;
- 
-        // 读取并添加课程信息
-        while (1) {
-            tempCourseNode = (CourseListNode*) malloc(sizeof(CourseListNode));
-            if (tempCourseNode == NULL) {
-                printf("内存分配失败!\n");
-                break;
-            }
-            readCount = fscanf(fp, "%d,%[^,],%f,%f\n",
-                              &tempCourseNode->data.daihao, tempCourseNode->data.name,
-                              &tempCourseNode->data.xuefen, &tempCourseNode->data.chengji);
-            if (readCount != 4||feof(fp)) { // 没读取到完整的课程信息，可能是到了下一个学生信息，或文件格式错误
-                break;
-            }
- 
-            tempCourseNode->next = currentStudent->chead;
-            currentStudent->chead = tempCourseNode;
- 
-        }
- 
-      if (feof(fp)) {
-                break; // 到达文件末尾，跳出内层循环
-            }
-     printf("1");
- 
+		/* 把你的文件格式改成空格分隔，每行开头用一个字符标记是学生还是课程
+		 * 为什么非要把简单的问题复杂化，给自己增加解析难度呢
+		 * S 33 yu 15 男 0.00 0.00
+		   C 3 英语 4.00 150.00
+           C 2 数学 3.00 140.00
+           C 1 语文 2.00 120.00
+		   S 123 he 15 男 0.00 0.00
+		   ...
+		 */
+		char scmark;
+		fscanf(fp, " %c", &scmark);
+		if (scmark == 'S') {
+			// 学生
+			int readCount = fscanf(fp, "%d%s%d%s%f%f",
+				&tempStudent.xuehao, tempStudent.name, &tempStudent.Class, tempStudent.sex,
+				&tempStudent.ZGPA, &tempStudent.KGPA);
+			// 抵达文件尾或无效数据
+			if (readCount != 6)
+				break;
+			// 创建新的学生节点
+			currentStudent = (struct Lstudent*) malloc(sizeof(struct Lstudent));
+			if (currentStudent == NULL) {
+				printf("内存分配失败!\n");
+				break;
+			}
+			currentStudent->data = tempStudent;
+			currentStudent->chead = NULL;
+			currentStudent->next = NULL;
+			 
+			// 如果这不是第一个学生节点，将其链接到链表末尾
+			if (prevStudent != NULL) {
+				prevStudent->next = currentStudent;
+			} else { // 第一个学生节点，更新链表头
+				*head = currentStudent;
+			}
+			prevStudent = currentStudent;
+			
+		}
+		else if (scmark == 'C') {
+			// 课程
+			// 读取并添加课程信息
+			tempCourseNode = (CourseListNode*) malloc(sizeof(CourseListNode));
+			if (tempCourseNode == NULL) {
+				printf("内存分配失败!\n");
+				break;
+			}
+			int readCount = fscanf(fp, "%d%s%f%f",
+				&tempCourseNode->data.daihao, tempCourseNode->data.name,
+				&tempCourseNode->data.xuefen, &tempCourseNode->data.chengji);
+			// 抵达文件尾或无效数据
+			if (readCount != 4) {
+				// 需要释放tempCourseNode否则内存泄漏
+				free(tempCourseNode);
+				break;
+			}
+
+			if (currentStudent) {
+				tempCourseNode->next = currentStudent->chead;
+				currentStudent->chead = tempCourseNode;
+			}
+		}
+		// 既不是S也不是C，非法
+		else
+			break;
     }
-    printf("2");
-    int result = fclose(fp);
-    if (result != 0) {
-        perror("fclose failed");
-    } else {
-        printf("文件读取成功并关闭\n");
-    }
- 
+	fclose(fp);
 }
  
 void freeStudentList(struct Lstudent* head) {
