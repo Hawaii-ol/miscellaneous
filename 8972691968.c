@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
 #ifdef _WIN32
 #include <conio.h>
 #define KB_UP 0x48
@@ -36,7 +38,7 @@ struct {
 	int x, y;
 }cursor;
 
-void paint_board(int showcursor)
+void paint_board(int player)
 {
 	for (int i = 0; i < 3; i++) {
 		if (i != 0) {
@@ -52,8 +54,12 @@ void paint_board(int showcursor)
 		for (int j = 0; j < 3; j++) {
 			if (j != 0)
 				printf("│");
-			if (showcursor && i == cursor.x && j == cursor.y)
-				putchar('#');
+			if (player && i == cursor.x && j == cursor.y) {
+				if (board[i][j] == ' ')
+					putchar(player);
+				else
+					printf("\033[31m%c\033[0m", board[i][j]);
+			}
 			else if (marks[i][j])
 				printf("\033[32m%c\033[0m", board[i][j]);
 			else
@@ -65,7 +71,7 @@ void paint_board(int showcursor)
 
 int main()
 {
-	int count = 0, player = 'o', winner = 0;
+	int count = 0, player = 'O', winner = 0;
 	memset(board, ' ', sizeof(board));
 	printf("Tic-Tac-Toe\n");
 	// hide cursor
@@ -76,7 +82,7 @@ int main()
 		while (!place) {
 			printf("It's %c's turn\n", player);
 			printf("Press Arrow Keys to move, Enter to place.\n");
-			paint_board(1);
+			paint_board(player);
 			switch (getch()) {
 			case KB_UP:
 				if (cursor.x > 0)
@@ -96,7 +102,7 @@ int main()
 				break;
 			case KB_ENTER:
 				if (board[cursor.x][cursor.y] == ' ') {
-					board[cursor.x][cursor.y] = player;
+					board[cursor.x][cursor.y] = tolower(player);
 					place = 1;
 				}
 			}
@@ -131,7 +137,7 @@ int main()
 			goto RESULT;
 		}
 		
-		player = player == 'o' ? 'x' : 'o';
+		player = player == 'O' ? 'X' : 'O';
 	}
 	
 RESULT:
